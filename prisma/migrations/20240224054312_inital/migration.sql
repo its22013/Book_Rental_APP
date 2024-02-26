@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE `Rental` MODIFY `returnDeadline` DATETIME(3) NOT NULL DEFAULT DATE_ADD(NOW(), INTERVAL 7 DAY);

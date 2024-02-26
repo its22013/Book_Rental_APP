@@ -48,7 +48,11 @@ const config = (passport) => {
                 return done(null, false, {message: "invalid email and/or password.."}); // メッセージを修正
             }
             // OK
-            return done(null, user);
+            return done(null, {
+                id: user.id,
+                email: user.email,
+                isAdmin: user.isAdmin || false // 管理者ならtrueを返す
+            });
         } catch (e) {
             return done(e);
         }
@@ -56,7 +60,7 @@ const config = (passport) => {
     // セッションストアに保存
     passport.serializeUser((user, done) => {
         process.nextTick(() => {
-            done(null, { id: user.id, email: user.email });
+            done(null, user);
         });
     });
     // セッションストアから復元
