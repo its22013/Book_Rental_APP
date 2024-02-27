@@ -4,6 +4,20 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 const router = express.Router();
 
+// エラーハンドリングミドルウェア
+const errorHandler = (res, statusCode, message) => {
+    return res.status(statusCode).json({ error: message });
+};
+
+// 管理者権限チェックミドルウェア
+const checkAdminPermission = (req, res, next) => {
+    if (!req.user || !req.user.isAdmin) {
+        return res.status(403).json({ error: "Forbidden" });
+    }
+    next();
+};
+
+
 // 書籍情報登録
 router.post("/book/create", async (req, res) => {
     // ログインユーザが管理者でない場合は常に403エラーを返す
@@ -55,47 +69,85 @@ router.put("/book/update", async (req, res) => {
     }
 });
 
-// 全ユーザの貸出中書籍一覧
-router.get("/rental/current", async (req, res) => {
-    // ログインユーザが管理者でない場合は常に403エラーを返す
-    if (!req.user || !req.user.isAdmin) {
-        return res.status(403).json({ error: "Forbidden" });
-    }
-
+// 全ユーザーの貸出中書籍一覧
+router.get("/rental/current", checkAdminPermission, async (req, res) => {
     try {
-        const rentalBooks = await prisma.rental.findMany({
-            include: {
-                User: true,
-                Book: true
+        const allUsers = await prisma.user.findMany();
+
+        const rentalBooksByUser = await Promise.all(allUsers.map(async (user) => {
+            const rentalBooks = await prisma.rental.findMany({
+                where: { userId: user.id, returnDate: null },
+                include: {
+                    Book: true
+                }
+            });
+
+            const formattedRentalBooks = rentalBooks.map(rental => ({
+                rentalId: rental.id,
+                bookId: rental.Book.id,
+                bookName: rental.Book.title,
+                rentalDate: rental.rentalDate,
+                returnDeadline: rental.returnDeadline
+            }));
+
+            if (formattedRentalBooks.length === 0) {
+                return null; // rentalBooksが空の場合はnullを返す
             }
-        });
-        res.status(200).json({ rentalBooks });
+
+            return {
+                userId: user.id,
+                userName: user.name,
+                rentalBooks: formattedRentalBooks
+            };
+        }));
+
+        // rentalBooksがnullでない要素のみをフィルタリングして返す
+        const filteredRentalBooksByUser = rentalBooksByUser.filter(rental => rental !== null);
+
+        res.status(200).json({ rentalBooksByUser: filteredRentalBooksByUser });
     } catch (error) {
-        res.status(500).json({ error: "Internal Server Error" });
+        errorHandler(res, 500, "Internal Server Error");
     }
 });
 
-// 特定ユーザの貸出中書籍一覧
-router.get("/rental/current/:uid", async (req, res) => {
-    // ログインユーザが管理者でない場合は常に403エラーを返す
-    if (!req.user || !req.user.isAdmin) {
-        return res.status(403).json({ error: "Forbidden" });
-    }
 
+// 特定ユーザの貸出中書籍一覧
+router.get("/rental/current/:uid", checkAdminPermission, async (req, res) => {
     const userId = parseInt(req.params.uid);
 
     try {
+        const user = await prisma.user.findUnique({
+            where: { id: userId }
+        });
+
+        if (!user) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
         const rentalBooks = await prisma.rental.findMany({
-            where: { userId },
+            where: { userId, returnDate: null },
             include: {
-                User: true,
                 Book: true
             }
         });
-        res.status(200).json({ userId, rentalBooks });
+
+        const formattedRentalBooks = rentalBooks.map(rental => ({
+            rentalId: rental.id,
+            bookId: rental.Book.id,
+            bookName: rental.Book.title,
+            rentalDate: rental.rentalDate,
+            returnDeadline: rental.returnDeadline
+        }));
+
+        res.status(200).json({
+            userId,
+            userName: user.name,
+            rentalBooks: formattedRentalBooks
+        });
     } catch (error) {
-        res.status(500).json({ error: "Internal Server Error" });
+        errorHandler(res, 500, "Internal Server Error");
     }
 });
+
 
 export default router;

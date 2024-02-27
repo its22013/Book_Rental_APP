@@ -71,7 +71,7 @@ router.get("/current", authenticateUser, async (req, res) => {
 
     try {
         const rentalBooks = await prisma.rental.findMany({
-            where: { userId, returnDate: null },
+            where: { userId },
             include: { Book: true }
         });
         res.status(200).json({ rentalBooks });
